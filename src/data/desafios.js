@@ -1,0 +1,58 @@
+export const desafios = [
+  {
+    id: 'dominada-antes-fin-de-ano',
+    numero: '01',
+    categoria: 'FUERZA',
+    titulo: 'Una dominada antes de fin de año',
+    descripcion: 'Lograr una dominada completa, sin asistencia y con técnica controlada, antes del 31 de diciembre.',
+  },
+  {
+    id: 'sentadilla-50-kg',
+    numero: '02',
+    categoria: 'FUERZA',
+    titulo: 'Sentadilla de 50 kg',
+    descripcion: 'Alcanzar una sentadilla con 50 kg, manteniendo una ejecución segura y un rango de movimiento adecuado.',
+  },
+  {
+    id: '20-flexiones-seguidas',
+    numero: '03',
+    categoria: 'RESISTENCIA',
+    titulo: '20 flexiones seguidas',
+    descripcion: 'Completar 20 flexiones consecutivas con buena técnica, sin apoyar las rodillas ni perder la postura.',
+  },
+  {
+    id: 'peso-muerto-60-kg',
+    numero: '04',
+    categoria: 'FUERZA',
+    titulo: 'Tu primer peso muerto de 60 kg',
+    descripcion: 'Alcanzar los 60 kg en peso muerto con una técnica consistente y una carga apropiada para tu nivel.',
+  },
+  {
+    id: 'correr-5-km',
+    numero: '05',
+    categoria: 'RESISTENCIA',
+    titulo: 'Correr 5 km sin parar',
+    descripcion: 'Completar cinco kilómetros a un ritmo sostenible, sin pausas para caminar.',
+  },
+  {
+    id: 'supera-tu-marca-personal',
+    numero: '06',
+    categoria: 'PROGRESIÓN',
+    titulo: 'Superá tu marca personal',
+    descripcion: 'Mejorar una marca registrada previamente en un ejercicio elegido, manteniendo las mismas condiciones de ejecución.',
+  },
+  {
+    id: '12-entrenamientos-mes',
+    numero: '07',
+    categoria: 'CONSTANCIA',
+    titulo: '12 entrenamientos en un mes',
+    descripcion: 'Completar 12 sesiones de entrenamiento durante un mes para construir el hábito y mantener la regularidad.',
+  },
+  {
+    id: '4-semanas-constancia',
+    numero: '08',
+    categoria: 'HÁBITOS',
+    titulo: '4 semanas de constancia',
+    descripcion: 'Cumplir con los entrenamientos planificados durante cuatro semanas, respetando también los descansos programados.',
+  },
+]
