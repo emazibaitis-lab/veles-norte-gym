@@ -1,25 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import {
-  arrayUnion,
-  collection,
-  deleteDoc,
-  doc,
-  getDocs,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
-} from 'firebase/firestore'
 import { desafios } from '../data/desafios.js'
-import { db } from '../firebase.js'
-
-function leerParticipacionesLocales(clave) {
-  try {
-    return JSON.parse(localStorage.getItem(clave) || '{}')
-  } catch {
-    return {}
-  }
-}
+import {
+  agregarAvanceDesafio,
+  eliminarDesafioSocio,
+  inscribirSocioEnDesafio,
+  obtenerDesafiosSocio,
+} from '../services/firebase/desafios.js'
 
 function crearDatosAvance() {
   const fecha = new Date()
@@ -34,7 +21,6 @@ function crearDatosAvance() {
 }
 
 function ChallengesSection({ uid }) {
-  const claveGuardado = `veles-norte-gym:desafios:${uid}`
   const carruselRef = useRef(null)
   const [participaciones, setParticipaciones] = useState({})
   const [cargando, setCargando] = useState(true)
@@ -58,48 +44,11 @@ function ChallengesSection({ uid }) {
       setMensajeEstado(null)
 
       try {
-        const referenciaColeccion = collection(db, 'socios', uid, 'desafios')
-        let documentos = await getDocs(referenciaColeccion)
-        const idsGuardados = new Set(documentos.docs.map((documento) => documento.id))
-        const participacionesLocales = leerParticipacionesLocales(claveGuardado)
-        const migraciones = Object.entries(participacionesLocales)
-          .filter(([desafioId, datos]) =>
-            desafios.some((desafio) => desafio.id === desafioId) &&
-            !idsGuardados.has(desafioId) &&
-            datos && typeof datos === 'object'
-          )
-          .map(([desafioId, datos]) =>
-            setDoc(doc(db, 'socios', uid, 'desafios', desafioId), {
-              desafioId,
-              inscriptoEn: datos.inscriptoEn || serverTimestamp(),
-              avances: Array.isArray(datos.avances) ? datos.avances : [],
-              actualizadoEn: serverTimestamp(),
-            })
-          )
-
-        if (migraciones.length > 0) {
-          await Promise.all(migraciones)
-          documentos = await getDocs(referenciaColeccion)
-        }
-
-        try {
-          // Una vez contrastados los datos con Firestore, la copia antigua ya no debe reimportarse.
-          localStorage.removeItem(claveGuardado)
-        } catch {
-          // La carga de Firestore sigue funcionando si el navegador bloquea el almacenamiento local.
-        }
+        const datosDesafios = await obtenerDesafiosSocio(uid)
 
         if (cancelado) return
 
-        setParticipaciones(Object.fromEntries(
-          documentos.docs.map((documento) => {
-            const datos = documento.data()
-            return [documento.id, {
-              ...datos,
-              avances: Array.isArray(datos.avances) ? datos.avances : [],
-            }]
-          })
-        ))
+        setParticipaciones(datosDesafios)
       } catch (error) {
         if (cancelado) return
 
@@ -119,7 +68,7 @@ function ChallengesSection({ uid }) {
     return () => {
       cancelado = true
     }
-  }, [uid, claveGuardado, reintentoCarga])
+  }, [uid, reintentoCarga])
 
   useEffect(() => {
     if (!mensajeEstado) return
@@ -140,13 +89,7 @@ function ChallengesSection({ uid }) {
     setGuardando(true)
     limpiarMensajes()
     try {
-      const participacion = {
-        desafioId,
-        inscriptoEn: serverTimestamp(),
-        avances: [],
-        actualizadoEn: serverTimestamp(),
-      }
-      await setDoc(doc(db, 'socios', uid, 'desafios', desafioId), participacion)
+      const participacion = await inscribirSocioEnDesafio(uid, desafioId)
       setParticipaciones((actuales) => ({ ...actuales, [desafioId]: participacion }))
       setMensajeEstado({ tipo: 'agregado', id: Date.now() })
     } catch (error) {
@@ -199,7 +142,7 @@ function ChallengesSection({ uid }) {
     setGuardando(true)
     limpiarMensajes()
     try {
-      await deleteDoc(doc(db, 'socios', uid, 'desafios', desafioId))
+      await eliminarDesafioSocio(uid, desafioId)
       setParticipaciones((actuales) => {
         const nuevas = { ...actuales }
         delete nuevas[desafioId]
@@ -238,10 +181,7 @@ function ChallengesSection({ uid }) {
     limpiarMensajes()
 
     try {
-      await updateDoc(doc(db, 'socios', uid, 'desafios', desafioId), {
-        avances: arrayUnion(nuevoAvance),
-        actualizadoEn: serverTimestamp(),
-      })
+      await agregarAvanceDesafio(uid, desafioId, nuevoAvance)
       setParticipaciones((actuales) => ({
         ...actuales,
         [desafioId]: {

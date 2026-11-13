@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import { signInWithEmailAndPassword } from 'firebase/auth'
-import { auth } from '../firebase.js'
+import { autenticarConCorreo } from '../services/firebase/autenticacion.js'
 
 function mensajeDeError(error) {
   switch (error.code) {
@@ -32,7 +31,7 @@ function Login() {
     setError('')
 
     try {
-      await signInWithEmailAndPassword(auth, correo.trim(), contrasena)
+      await autenticarConCorreo(correo, contrasena)
       setContrasena('')
     } catch (errorDeAcceso) {
       setError(mensajeDeError(errorDeAcceso))

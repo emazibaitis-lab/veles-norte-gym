@@ -22,6 +22,10 @@ Las rutinas y el catálogo general son datos estáticos del proyecto. El progres
 - JavaScript y CSS
 - ExerciseDB para cargar detalles y animaciones disponibles de ejercicios. La disponibilidad de esos recursos depende del servicio externo.
 
+## Recursos visuales externos
+
+Los GIF de demostración se sirven desde ExerciseDB. Al depender de un servicio externo, algún GIF puede tardar en cargar o dejar de estar disponible. Si eso ocurre, la ficha del ejercicio sigue mostrando la información y las indicaciones locales; solo puede faltar la animación.
+
 ## Requisitos
 
 - Node.js y npm compatibles con la versión de Vite del proyecto.
@@ -89,9 +93,11 @@ npm run preview  # vista local de la compilación
 
 ```text
 src/
-├── components/   # mapa corporal, inicio de sesión y desafíos
-├── data/         # rutinas, catálogo y contenido estático
-├── App.jsx       # vistas, navegación y progreso de rutinas
+├── components/   # navegación, footer, mapa corporal, login y desafíos
+├── data/         # rutinas, consejos, catálogo y contenido estático
+├── services/     # acceso a Firebase y resolución de recursos externos
+├── pages/        # vistas de inicio, rutina y detalle de ejercicio
+├── App.jsx       # sesión, estado compartido y coordinación de vistas
 ├── firebase.js   # inicialización de Authentication y Firestore
 ├── App.css
 └── index.css
