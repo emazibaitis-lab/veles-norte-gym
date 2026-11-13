@@ -1,7 +1,8 @@
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
-import { doc, getDoc } from 'firebase/firestore'
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
 import './App.css'
 import isotipo from './assets/isotipo.svg';
 import userIcon from './assets/user-icon.svg'
@@ -10,6 +11,7 @@ import ChallengesSection from './components/ChallengesSection.jsx'
 import Login from './components/Login.jsx'
 import { zonasMusculares } from './components/zonasMusculares.js'
 import { catalogoEjercicios } from './data/catalogoEjercicios.js'
+import { obtenerInstruccionesEnEspanol } from './data/contenidoEjerciciosEs.js'
 import { auth, db } from './firebase.js'
 
 const rutinasPorDia = {
@@ -269,9 +271,16 @@ const consejos = [
 
 function App() {
   const [ejercicios, setEjercicios] = useState(ejerciciosIniciales)
+  const [estadoProgresoRutinas, setEstadoProgresoRutinas] = useState('idle')
+  const [errorProgresoRutinas, setErrorProgresoRutinas] = useState('')
+  const [guardandoProgresoRutinas, setGuardandoProgresoRutinas] = useState(false)
+  const [intentoCargaProgreso, setIntentoCargaProgreso] = useState(0)
+  const [mensajeRutina, setMensajeRutina] = useState(null)
   const [estadoAcceso, setEstadoAcceso] = useState({ estado: 'cargando-sesion' })
   const [errorCierreSesion, setErrorCierreSesion] = useState('')
   const [cerrandoSesion, setCerrandoSesion] = useState(false)
+  const [menuMobileAbierto, setMenuMobileAbierto] = useState(false)
+  const [menuUsuarioAbierto, setMenuUsuarioAbierto] = useState(false)
   const hoy = new Date()
   const numeroDia = hoy.getDay()
   const nombreDia = diasDeLaSemana[numeroDia]
@@ -286,11 +295,52 @@ function App() {
   const [entrenamientoIniciado, setEntrenamientoIniciado] = useState(false)
   const [pagina, setPagina] = useState('inicio')
   const [categoriaActiva, setCategoriaActiva] = useState('Todos')
-  const [verTodos, setVerTodos] = useState(false)
   const [zonaSeleccionada, setZonaSeleccionada] = useState(null)
   const [vistaMapa, setVistaMapa] = useState('FRONT')
   const indiceMuscularRef = useRef(null)
   const ejerciciosMuscularesRef = useRef(null)
+  const topbarRef = useRef(null)
+  const menuUsuarioRef = useRef(null)
+  const guardandoProgresoRef = useRef(false)
+  const usuarioUid = estadoAcceso.estado === 'activo'
+    ? estadoAcceso.usuario.uid
+    : null
+
+  useEffect(() => {
+    if (!mensajeRutina) return
+
+    const temporizador = window.setTimeout(() => setMensajeRutina(null), 3500)
+    return () => window.clearTimeout(temporizador)
+  }, [mensajeRutina])
+
+  useEffect(() => {
+    if (!menuUsuarioAbierto && !menuMobileAbierto) return
+
+    function cerrarMenuAlTocarAfuera(evento) {
+      if (!topbarRef.current?.contains(evento.target)) {
+        setMenuMobileAbierto(false)
+        setMenuUsuarioAbierto(false)
+      } else if (!menuUsuarioRef.current?.contains(evento.target)) {
+        setMenuUsuarioAbierto(false)
+      }
+    }
+
+    function cerrarMenuConEscape(evento) {
+      if (evento.key === 'Escape') {
+        setMenuMobileAbierto(false)
+        setMenuUsuarioAbierto(false)
+      }
+    }
+
+    document.addEventListener('pointerdown', cerrarMenuAlTocarAfuera)
+    document.addEventListener('keydown', cerrarMenuConEscape)
+
+    return () => {
+      document.removeEventListener('pointerdown', cerrarMenuAlTocarAfuera)
+      document.removeEventListener('keydown', cerrarMenuConEscape)
+    }
+  }, [menuMobileAbierto, menuUsuarioAbierto])
+
   const gruposCatalogo = zonaSeleccionada
     ? catalogoEjercicios
         .flatMap((ejercicio) =>
@@ -368,6 +418,66 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (!usuarioUid) {
+      setEjercicios((actuales) => actuales.map((ejercicio) => ({
+        ...ejercicio,
+        completado: false,
+      })))
+      setEjercicioSeleccionado(null)
+      setEstadoProgresoRutinas('idle')
+      setErrorProgresoRutinas('')
+      return
+    }
+
+    let cancelado = false
+    setEstadoProgresoRutinas('loading')
+    setErrorProgresoRutinas('')
+
+    async function cargarProgresoRutinas() {
+      try {
+        const documentos = await Promise.all(
+          rutinasSemanales.map((rutina) =>
+            getDoc(doc(db, 'socios', usuarioUid, 'progresoRutinas', rutina.id))
+          )
+        )
+
+        if (cancelado) return
+
+        const completadosPorRutina = new Map(
+          documentos.map((documento, indice) => {
+            const datos = documento.exists() ? documento.data() : {}
+            const ids = Array.isArray(datos.ejerciciosCompletados)
+              ? datos.ejerciciosCompletados.filter(Number.isInteger)
+              : []
+            return [rutinasSemanales[indice].id, new Set(ids)]
+          })
+        )
+
+        setEjercicios((actuales) => actuales.map((ejercicio) => ({
+          ...ejercicio,
+          completado: completadosPorRutina.get(ejercicio.rutinaId)?.has(ejercicio.id) ?? false,
+        })))
+        setEstadoProgresoRutinas('ready')
+      } catch (error) {
+        if (cancelado) return
+
+        setErrorProgresoRutinas(
+          error.code === 'permission-denied'
+            ? 'Firestore no permite leer el progreso. Revisá las reglas de acceso propuestas.'
+            : 'No pudimos cargar el progreso de tus rutinas. Revisá tu conexión e intentá de nuevo.'
+        )
+        setEstadoProgresoRutinas('error')
+      }
+    }
+
+    cargarProgresoRutinas()
+
+    return () => {
+      cancelado = true
+    }
+  }, [usuarioUid, intentoCargaProgreso])
+
+  useEffect(() => {
     if (!zonaSeleccionada) return
 
     function deseleccionarAlTocarAfuera(evento) {
@@ -383,43 +493,84 @@ function App() {
   }, [zonaSeleccionada])
 
 
-  function alternarCompletado(id) {
-    setEjercicios((actuales) =>
-      actuales.map((ejercicio) =>
-        ejercicio.id === id
-          ? { ...ejercicio, completado: !ejercicio.completado }
-          : ejercicio
+  async function alternarCompletado(id) {
+    if (
+      estadoProgresoRutinas !== 'ready' ||
+      guardandoProgresoRef.current ||
+      !usuarioUid
+    ) return
+
+    const ejercicioActual = ejercicios.find((ejercicio) => ejercicio.id === id)
+    if (!ejercicioActual) return
+
+    const nuevoEstado = !ejercicioActual.completado
+    const idsCompletados = ejercicios
+      .filter((ejercicio) => ejercicio.rutinaId === ejercicioActual.rutinaId)
+      .flatMap((ejercicio) => {
+        const quedaCompletado = ejercicio.id === id
+          ? nuevoEstado
+          : ejercicio.completado
+        return quedaCompletado ? [ejercicio.id] : []
+      })
+
+    guardandoProgresoRef.current = true
+    setGuardandoProgresoRutinas(true)
+    setErrorProgresoRutinas('')
+
+    try {
+      await setDoc(
+        doc(db, 'socios', usuarioUid, 'progresoRutinas', ejercicioActual.rutinaId),
+        {
+          ejerciciosCompletados: idsCompletados,
+          actualizadoEn: serverTimestamp(),
+        },
+        { merge: true }
       )
-    )
-    setEjercicioSeleccionado((actual) =>
-      actual?.id === id
-        ? { ...actual, completado: !actual.completado }
-        : actual
-    )
+
+      if (auth.currentUser?.uid !== usuarioUid) return
+
+      setEjercicios((actuales) => actuales.map((ejercicio) =>
+        ejercicio.id === id
+          ? { ...ejercicio, completado: nuevoEstado }
+          : ejercicio
+      ))
+      setEjercicioSeleccionado((actual) =>
+        actual?.id === id
+          ? { ...actual, completado: nuevoEstado }
+          : actual
+      )
+
+      const totalEjerciciosRutina = ejercicios.filter(
+        (ejercicio) => ejercicio.rutinaId === ejercicioActual.rutinaId
+      ).length
+      if (nuevoEstado && idsCompletados.length === totalEjerciciosRutina) {
+        const rutina = rutinasSemanales.find(
+          (item) => item.id === ejercicioActual.rutinaId
+        )
+        setMensajeRutina({
+          id: Date.now(),
+          texto: `Completaste la rutina ${rutina?.nombre ?? ''}.`,
+        })
+      }
+    } catch (error) {
+      if (auth.currentUser?.uid !== usuarioUid) return
+
+      setErrorProgresoRutinas(
+        error.code === 'permission-denied'
+          ? 'Firestore no permite guardar el progreso. Revisá las reglas de acceso propuestas.'
+          : 'No pudimos guardar el cambio. Revisá tu conexión e intentá de nuevo.'
+      )
+    } finally {
+      guardandoProgresoRef.current = false
+      setGuardandoProgresoRutinas(false)
+    }
   }
 
   async function abrirDetalleCatalogo(ejercicioCatalogo) {
     setEjercicioSeleccionado(null)
     setEjercicioCatalogoSeleccionado(ejercicioCatalogo)
-    setDetalleCatalogoApi(null)
-    setEstadoDetalleCatalogo('loading')
-
-    try {
-      const respuesta = await fetch(
-        `https://oss.exercisedb.dev/api/v1/exercises/${ejercicioCatalogo.exerciseDbId}`
-      )
-      if (!respuesta.ok) throw new Error('La API respondió con un error.')
-
-      const resultado = await respuesta.json()
-      if (!resultado.success || !resultado.data) {
-        throw new Error('La API no devolvió los datos del ejercicio.')
-      }
-
-      setDetalleCatalogoApi(resultado.data)
-      setEstadoDetalleCatalogo('loaded')
-    } catch {
-      setEstadoDetalleCatalogo('error')
-    }
+    setDetalleCatalogoApi(ejercicioCatalogo)
+    setEstadoDetalleCatalogo('loaded')
   }
 
   function mostrarEjerciciosMusculares() {
@@ -494,8 +645,8 @@ function App() {
   }
 
   return (
-    <main className="app">
-      <header className="topbar">
+    <main className={`app ${pagina === 'rutina' ? 'app-routine' : ''}`}>
+      <header className="topbar" ref={topbarRef}>
         <a
           className="brand"
           href="#inicio"
@@ -507,71 +658,105 @@ function App() {
             setDetalleCatalogoApi(null)
             setEstadoDetalleCatalogo('idle')
             setEntrenamientoIniciado(false)
+            setMenuMobileAbierto(false)
+            setMenuUsuarioAbierto(false)
           }}
         >
           <img
             src={isotipo}
-            alt="Veles Norte Gym"
+            alt=""
             className="brand-icon"
           />
-
+          <span className="brand-name">VELES NORTE</span>
         </a>
 
-        <nav className="navigation" aria-label="Navegación principal">
-          <a
-            href="#inicio"
-            className={pagina === 'inicio' ? 'active' : ''}
-            onClick={(event) => {
-              event.preventDefault()
-              setPagina('inicio')
-              setEjercicioSeleccionado(null)
-              setEjercicioCatalogoSeleccionado(null)
-              setDetalleCatalogoApi(null)
-              setEstadoDetalleCatalogo('idle')
-            }}
-          >
-            Inicio
-          </a>
+        <button
+          type="button"
+          className={`mobile-menu-toggle ${menuMobileAbierto ? 'is-open' : ''}`}
+          aria-label={menuMobileAbierto ? 'Cerrar menú de navegación' : 'Abrir menú de navegación'}
+          aria-controls="topbar-menu"
+          aria-expanded={menuMobileAbierto}
+          onClick={() => {
+            setMenuMobileAbierto((abierto) => !abierto)
+            setMenuUsuarioAbierto(false)
+          }}
+        >
+          <span className="mobile-menu-icon" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+        </button>
 
-          <a
-            href="#rutina"
-            className={pagina === 'rutina' ? 'active' : ''}
-            onClick={(event) => {
-              event.preventDefault()
-              setPagina('rutina')
-              setEjercicioSeleccionado(null)
-              setEjercicioCatalogoSeleccionado(null)
-              setDetalleCatalogoApi(null)
-              setEstadoDetalleCatalogo('idle')
-            }}
-          >
-            Mi rutina
-          </a>
-        </nav>
+        <div
+          id="topbar-menu"
+          className={`topbar-navigation-panel ${menuMobileAbierto ? 'is-open' : ''}`}
+        >
+          <nav className="navigation" aria-label="Navegación principal">
+            <a
+              href="#inicio"
+              className={pagina === 'inicio' ? 'active' : ''}
+              onClick={(event) => {
+                event.preventDefault()
+                setPagina('inicio')
+                setEjercicioSeleccionado(null)
+                setEjercicioCatalogoSeleccionado(null)
+                setDetalleCatalogoApi(null)
+                setEstadoDetalleCatalogo('idle')
+                setMenuMobileAbierto(false)
+                setMenuUsuarioAbierto(false)
+              }}
+            >
+              Inicio
+            </a>
 
-        <div className="member-session account-menu">
-          <button
-            type="button"
-            className="account-menu-trigger"
-            aria-label="Abrir menú de usuario"
-            aria-controls="account-dropdown"
+            <a
+              href="#rutina"
+              className={pagina === 'rutina' ? 'active' : ''}
+              onClick={(event) => {
+                event.preventDefault()
+                setPagina('rutina')
+                setEjercicioSeleccionado(null)
+                setEjercicioCatalogoSeleccionado(null)
+                setDetalleCatalogoApi(null)
+                setEstadoDetalleCatalogo('idle')
+                setMenuMobileAbierto(false)
+                setMenuUsuarioAbierto(false)
+              }}
+            >
+              Mi rutina
+            </a>
+          </nav>
+
+          <div
+            className={`member-session account-menu ${menuUsuarioAbierto ? 'is-open' : ''}`}
+            ref={menuUsuarioRef}
           >
-            <img src={userIcon} alt="" />
-          </button>
-          <div id="account-dropdown" className="account-dropdown" role="group" aria-label="Opciones de cuenta">
-            <span className="account-name">{estadoAcceso.nombre}</span>
             <button
               type="button"
-              className="account-logout"
-              onClick={cerrarSesion}
-              disabled={cerrandoSesion}
+              className="account-menu-trigger"
+              aria-label={menuUsuarioAbierto ? 'Cerrar opciones de usuario' : 'Mostrar opciones de usuario'}
+              aria-controls="account-dropdown"
+              aria-expanded={menuUsuarioAbierto}
+              onClick={() => setMenuUsuarioAbierto((abierto) => !abierto)}
             >
-              {cerrandoSesion ? 'Cerrando sesión…' : 'Cerrar sesión'}
+              <img src={userIcon} alt="" />
+              <span className="account-menu-label">Usuario</span>
             </button>
-            {errorCierreSesion && <span className="session-error" role="alert">{errorCierreSesion}</span>}
+            <div id="account-dropdown" className="account-dropdown" role="group" aria-label="Opciones de cuenta">
+              <span className="account-name">{estadoAcceso.nombre}</span>
+              <button
+                type="button"
+                className="account-logout"
+                onClick={cerrarSesion}
+                disabled={cerrandoSesion}
+              >
+                {cerrandoSesion ? 'Cerrando sesión…' : 'Cerrar sesión'}
+              </button>
+              {errorCierreSesion && <span className="session-error" role="alert">{errorCierreSesion}</span>}
+            </div>
           </div>
         </div>
-
       </header>
 
 
@@ -598,61 +783,42 @@ function App() {
             </p>
 
             <div className="detail-card catalog-api-card" aria-live="polite">
-              {estadoDetalleCatalogo === 'loading' && (
-                <p role="status">Cargando información del ejercicio…</p>
-              )}
-
-              {estadoDetalleCatalogo === 'error' && (
-                <div>
-                  <p role="alert">No pudimos cargar los datos. Revisá tu conexión e intentá de nuevo.</p>
-                  <button
-                    type="button"
-                    className="catalog-api-retry"
-                    onClick={() => abrirDetalleCatalogo(ejercicioCatalogoSeleccionado)}
-                  >
-                    Reintentar
-                  </button>
-                </div>
-              )}
-
               {estadoDetalleCatalogo === 'loaded' && detalleCatalogoApi && (
                 <>
-                  <img
-                    className="catalog-api-gif"
-                    src={detalleCatalogoApi.gifUrl}
-                    alt={`Demostración animada: ${ejercicioCatalogoSeleccionado.nombre}`}
-                    loading="lazy"
-                  />
+                  <div className="catalog-api-match">
+                    <span>{detalleCatalogoApi.exerciseDbName ? 'NOMBRE ORIGINAL EN EXERCISEDB' : 'GRUPO MUSCULAR'}</span>
+                    <strong>{detalleCatalogoApi.exerciseDbName || detalleCatalogoApi.grupos.map(({ subgrupo }) => subgrupo).join(', ')}</strong>
+                  </div>
+                  {detalleCatalogoApi.exerciseDbGifUrl ? (
+                    <img
+                      className="catalog-api-gif"
+                      src={detalleCatalogoApi.exerciseDbGifUrl}
+                      alt={`Demostración animada: ${ejercicioCatalogoSeleccionado.nombre}`}
+                      loading="lazy"
+                      onError={(event) => { event.currentTarget.hidden = true }}
+                    />
+                  ) : (
+                    <p className="detail-note">Todavía no hay una demostración animada verificada para este ejercicio.</p>
+                  )}
 
                   <div className="catalog-api-metadata">
                     <div>
-                      <span>MÚSCULO PRINCIPAL</span>
-                      <strong>{detalleCatalogoApi.targetMuscles?.join(', ') || 'Sin dato'}</strong>
+                      <span>GRUPO MUSCULAR</span>
+                      <strong>{detalleCatalogoApi.grupos.map(({ subgrupo }) => subgrupo).filter((grupo, index, grupos) => grupos.indexOf(grupo) === index).join(', ')}</strong>
                     </div>
-                    <div>
-                      <span>EQUIPAMIENTO</span>
-                      <strong>{detalleCatalogoApi.equipments?.join(', ') || 'Sin dato'}</strong>
-                    </div>
-                    {detalleCatalogoApi.secondaryMuscles?.length > 0 && (
-                      <div>
-                        <span>MÚSCULOS SECUNDARIOS</span>
-                        <strong>{detalleCatalogoApi.secondaryMuscles.join(', ')}</strong>
-                      </div>
-                    )}
                   </div>
 
-                  <h2>Indicaciones</h2>
-                  <p className="catalog-api-language-note">
-                    La información de esta versión de ExerciseDB está en inglés.
-                  </p>
+                  <h2>Indicaciones en español</h2>
                   <ol className="catalog-api-instructions">
-                    {detalleCatalogoApi.instructions?.map((indicacion, indice) => (
-                      <li key={`${indice}-${indicacion}`}>{indicacion.replace(/^Step:\d+\s*/i, '')}</li>
+                    {obtenerInstruccionesEnEspanol(ejercicioCatalogoSeleccionado).map((indicacion, indice) => (
+                      <li key={`${indice}-${indicacion}`}>{indicacion}</li>
                     ))}
                   </ol>
-                  <p className="detail-note catalog-api-credit">
-                    Demostración y datos: <a href="https://exercisedb.dev/" target="_blank" rel="noreferrer">ExerciseDB / AscendAPI</a>.
-                  </p>
+                  {detalleCatalogoApi.exerciseDbGifUrl && (
+                    <p className="detail-note catalog-api-credit">
+                      Demostración animada: <a href="https://exercisedb.dev/" target="_blank" rel="noreferrer">ExerciseDB / AscendAPI</a>.
+                    </p>
+                  )}
                 </>
               )}
             </div>
@@ -713,12 +879,18 @@ function App() {
                     ? 'complete-button completed'
                     : 'complete-button'
                 }
+                disabled={estadoProgresoRutinas !== 'ready' || guardandoProgresoRutinas}
                 onClick={() => alternarCompletado(ejercicioSeleccionado.id)}
               >
-                {ejercicioSeleccionado.completado
+                {guardandoProgresoRutinas
+                  ? 'Guardando progreso…'
+                  : ejercicioSeleccionado.completado
                   ? '✓ Ejercicio completado'
                   : 'Marcar ejercicio como realizado'}
               </button>
+              {errorProgresoRutinas && (
+                <p className="auth-error" role="alert">{errorProgresoRutinas}</p>
+              )}
             </div>
           </section>
         ) : pagina === 'rutina' ? (
@@ -736,10 +908,25 @@ function App() {
             <h1>Mi rutina</h1>
 
             <div className="weekly-routines">
-              {rutinaSemanalDeHoy && (
-                <p className="eyebrow today-routine-label">
-                  RUTINA DE HOY · {nombreDia.toUpperCase()}
-                </p>
+              {estadoProgresoRutinas === 'loading' && (
+                <p className="auth-status" role="status">Cargando tu progreso…</p>
+              )}
+              {estadoProgresoRutinas === 'error' && (
+                <div>
+                  <p className="auth-error" role="alert">{errorProgresoRutinas}</p>
+                  <button
+                    type="button"
+                    onClick={() => setIntentoCargaProgreso((intento) => intento + 1)}
+                  >
+                    Reintentar
+                  </button>
+                </div>
+              )}
+              {estadoProgresoRutinas === 'ready' && guardandoProgresoRutinas && (
+                <p className="auth-status" role="status">Guardando progreso…</p>
+              )}
+              {estadoProgresoRutinas === 'ready' && errorProgresoRutinas && (
+                <p className="auth-error" role="alert">{errorProgresoRutinas}</p>
               )}
               {!rutinaSemanalDeHoy && (
                 <p className="rest-day-message">
@@ -759,6 +946,8 @@ function App() {
                   const completadosRutina = ejerciciosRutina.filter(
                     (ejercicio) => ejercicio.completado
                   ).length
+                  const esRutinaCompletada = ejerciciosRutina.length > 0 &&
+                    completadosRutina === ejerciciosRutina.length
                   const esRutinaDeHoy = rutina.id === rutinaSemanalDeHoy?.id
                   const diaRutina = diasDeLaSemana[rutina.dia]
 
@@ -770,12 +959,15 @@ function App() {
                       <summary className="routine-summary">
                         <span className="routine-summary-copy">
                           <span className="eyebrow">
-                            {esRutinaDeHoy ? 'HOY' : diaRutina.toUpperCase()} · {rutina.grupo}
+                            {esRutinaDeHoy ? 'HOY' : diaRutina.toUpperCase()}
                           </span>
                           <strong>{rutina.nombre}</strong>
                           <span className="routine-summary-meta">
                             {ejerciciosRutina.length} ejercicios · {completadosRutina}/{ejerciciosRutina.length} completados
                           </span>
+                          {esRutinaCompletada && (
+                            <span className="routine-completed-badge">Rutina completada</span>
+                          )}
                         </span>
                         <span className="routine-chevron" aria-hidden="true">+</span>
                       </summary>
@@ -826,6 +1018,7 @@ function App() {
 
                               <button
                                 className={`check-button ${ejercicio.completado ? 'checked' : ''}`}
+                                disabled={estadoProgresoRutinas !== 'ready' || guardandoProgresoRutinas}
                                 aria-label={ejercicio.completado
                                   ? `Desmarcar ${ejercicio.nombre}`
                                   : `Completar ${ejercicio.nombre}`}
@@ -890,15 +1083,13 @@ function App() {
                                   <span className="muscle-exercise-name">
                                     <strong>{ejercicioCatalogo.nombre}</strong>
                                   </span>
-                                  {ejercicioCatalogo.exerciseDbId && (
-                                    <button
-                                      type="button"
-                                      className="catalog-detail-button"
-                                      onClick={() => abrirDetalleCatalogo(ejercicioCatalogo)}
-                                    >
-                                      Ver detalles
-                                    </button>
-                                  )}
+                                  <button
+                                    type="button"
+                                    className="catalog-detail-button"
+                                    onClick={() => abrirDetalleCatalogo(ejercicioCatalogo)}
+                                  >
+                                    Ver detalles
+                                  </button>
                                   <span className={`muscle-routine-label ${ejercicioAsignado ? 'is-assigned' : ''}`}>
                                     {ejercicioAsignado
                                       ? `En tu rutina · ${rutinaAsignada?.nombre ?? ''}`
@@ -927,14 +1118,12 @@ function App() {
           <>
             <section className="welcome">
               <div>
-                <p className="eyebrow">TU ESPACIO</p>
                 <h1>Vamos a <span>entrenar.</span></h1>
               </div>
 
               <div className="date-stamp">
                 <span>SESIÓN</span>
                 <strong>01</strong>
-                <span>ENTRENAMIENTO</span>
               </div>
             </section>
 
@@ -968,29 +1157,11 @@ function App() {
               uid={estadoAcceso.usuario.uid}
             />
 
-            <section className="home-section">
+            <section className="home-section tips-section">
               <div className="section-heading">
                 <div>
-                  <h2>Tu cuota</h2>
-                </div>
-              </div>
-
-              <div className="home-info-card">
-                <p className="eyebrow">TU PRÓXIMO PAGO</p>
-                <h3>15 de noviembre</h3>
-                <p>Revisá la fecha de vencimiento de tu cuota mensual.</p>
-              </div>
-            </section>
-
-
-
-            <section className="home-section">
-              <div className="section-heading">
-                <div>
-                  <p className="eyebrow">PARA TU ENTRENAMIENTO</p>
                   <h2>Consejos para progresar</h2>
                 </div>
-                <span>01 — 06</span>
               </div>
 
               <div className="tips-filters" aria-label="Filtrar consejos">
@@ -1030,17 +1201,22 @@ function App() {
                     categoriaActiva === 'Todos' ||
                     consejo.categoria === categoriaActiva
                   )
-                  .filter((consejo, index) =>
-                    verTodos || categoriaActiva !== 'Todos' || index < 3
-                  )
                   .map((consejo, index) => (
                     <details className="tip-item" key={consejo.id}>
+                      <svg
+                        className="tip-outline"
+                        aria-hidden="true"
+                        focusable="false"
+                        viewBox="0 0 100 100"
+                        preserveAspectRatio="none"
+                      >
+                        <path d="M0 0 H100 V100 H0 Z" />
+                      </svg>
                       <summary>
                         <span className="tip-number">
                           {String(index + 1).padStart(2, '0')}
                         </span>
                         <span className="tip-title-group">
-                          <span className="eyebrow">{consejo.categoria}</span>
                           <strong>{consejo.titulo}</strong>
                         </span>
                         <span className="tip-toggle" aria-hidden="true" />
@@ -1055,18 +1231,20 @@ function App() {
                   ))}
               </div>
 
-              {categoriaActiva === 'Todos' && (
-                <button
-                  type="button"
-                  className="tips-more"
-                  onClick={() => setVerTodos(!verTodos)}
-                >
-                  {verTodos ? 'Ver menos' : 'Ver todos los consejos'}
-                  <span aria-hidden="true">
-                    {verTodos ? '−' : '+'}
-                  </span>
-                </button>
-              )}
+            </section>
+
+            <section className="home-section">
+              <div className="section-heading">
+                <div>
+                  <h2>Tu cuota</h2>
+                </div>
+              </div>
+
+              <div className="home-info-card">
+                <p className="eyebrow">TU PRÓXIMO PAGO</p>
+                <h3>15 de noviembre</h3>
+                <p>Pagá tu cuota de manera presencial</p>
+              </div>
             </section>
 
           </>
@@ -1075,9 +1253,42 @@ function App() {
 
 
       <footer className="footer">
-        <span>VELES NORTE GYM</span>
-        <span>ENTRENÁ A TU RITMO.</span>
+        <div className="footer-brand">
+          <strong>VELES NORTE GYM</strong>
+          <span>ENTRENÁ A TU RITMO.</span>
+        </div>
+        <div className="footer-contact-group">
+          <address>
+            Barrio Floresta<br />
+            Av. Carrasco 121<br />
+            C1407 CABA
+          </address>
+        </div>
+        <div className="footer-contact-group">
+          <span className="footer-label">CONTACTO</span>
+          <a href="tel:+541168564264">011 6856-4264</a>
+        </div>
+        <a
+          className="footer-instagram"
+          href="https://www.instagram.com/velezsarsfieldnorte/"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Instagram de Vélez Sarsfield Norte (abre en una pestaña nueva)"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <rect x="3" y="3" width="18" height="18" rx="5" />
+            <circle cx="12" cy="12" r="4" />
+            <circle className="instagram-dot" cx="17.5" cy="6.8" r="1" />
+          </svg>
+        </a>
       </footer>
+
+      {mensajeRutina && createPortal(
+        <div className="challenge-toast" role="status" aria-live="polite">
+          {mensajeRutina.texto}
+        </div>,
+        document.body
+      )}
     </main>
   )
 }
