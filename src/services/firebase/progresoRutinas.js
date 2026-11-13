@@ -1,5 +1,5 @@
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
-import { db } from '../../firebase.js'
+import { db } from '../../firebaseFirestore.js'
 
 export async function cargarProgresoRutinas(uid, rutinas) {
   const documentos = await Promise.all(

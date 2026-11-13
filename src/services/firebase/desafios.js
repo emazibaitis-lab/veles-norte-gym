@@ -9,7 +9,7 @@ import {
   updateDoc,
 } from 'firebase/firestore'
 import { desafios } from '../../data/desafios.js'
-import { db } from '../../firebase.js'
+import { db } from '../../firebaseFirestore.js'
 
 function leerParticipacionesLocales(clave) {
   try {

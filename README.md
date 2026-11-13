@@ -22,6 +22,8 @@ Las rutinas y el catálogo general son datos estáticos del proyecto. El progres
 - JavaScript y CSS
 - ExerciseDB para cargar detalles y animaciones disponibles de ejercicios. La disponibilidad de esos recursos depende del servicio externo.
 
+Las vistas y Firestore se cargan de forma diferida para reducir el JavaScript de la carga inicial. El paquete de Firestore se solicita cuando se consulta información del socio o su progreso.
+
 ## Recursos visuales externos
 
 Los GIF de demostración se sirven desde ExerciseDB. Al depender de un servicio externo, algún GIF puede tardar en cargar o dejar de estar disponible. Si eso ocurre, la ficha del ejercicio sigue mostrando la información y las indicaciones locales; solo puede faltar la animación.
@@ -98,7 +100,10 @@ src/
 ├── services/     # acceso a Firebase y resolución de recursos externos
 ├── pages/        # vistas de inicio, rutina y detalle de ejercicio
 ├── App.jsx       # sesión, estado compartido y coordinación de vistas
-├── firebase.js   # inicialización de Authentication y Firestore
+├── firebaseApp.js       # inicialización de la app y su configuración
+├── firebaseAuth.js      # inicialización de Authentication
+├── firebaseFirestore.js # inicialización de Firestore, cargada cuando hace falta
+├── firebase.js          # reexportaciones compatibles
 ├── App.css
 └── index.css
 ```

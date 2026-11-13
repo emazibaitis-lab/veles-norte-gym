@@ -1,23 +1,19 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import './App.css'
 import AppFooter from './components/AppFooter.jsx'
 import AppHeader from './components/AppHeader.jsx'
 import Login from './components/Login.jsx'
-import ExerciseDetailPage from './pages/ExerciseDetailPage.jsx'
-import HomePage from './pages/HomePage.jsx'
-import RoutinePage from './pages/RoutinePage.jsx'
 import { ejerciciosIniciales, rutinasPorDia, rutinasSemanales, diasDeLaSemana } from './data/rutinas.js'
 import {
   cerrarSesion as cerrarSesionFirebase,
   observarSesion,
   obtenerUsuarioActual,
 } from './services/firebase/autenticacion.js'
-import { obtenerPerfilSocio } from './services/firebase/socios.js'
-import {
-  cargarProgresoRutinas as cargarProgresoRutinasFirebase,
-  guardarProgresoRutina,
-} from './services/firebase/progresoRutinas.js'
+
+const ExerciseDetailPage = lazy(() => import('./pages/ExerciseDetailPage.jsx'))
+const HomePage = lazy(() => import('./pages/HomePage.jsx'))
+const RoutinePage = lazy(() => import('./pages/RoutinePage.jsx'))
 
 function App() {
   const [ejercicios, setEjercicios] = useState(ejerciciosIniciales)
@@ -68,6 +64,7 @@ function App() {
       setEstadoAcceso({ estado: 'consultando-perfil' })
 
       try {
+        const { obtenerPerfilSocio } = await import('./services/firebase/socios.js')
         const perfil = await obtenerPerfilSocio(usuario.uid)
         if (verificacion !== verificacionActual) return
 
@@ -119,7 +116,8 @@ function App() {
 
     async function cargarProgresoRutinas() {
       try {
-        const completadosPorRutina = await cargarProgresoRutinasFirebase(usuarioUid, rutinasSemanales)
+        const { cargarProgresoRutinas } = await import('./services/firebase/progresoRutinas.js')
+        const completadosPorRutina = await cargarProgresoRutinas(usuarioUid, rutinasSemanales)
         if (cancelado) return
 
         setEjercicios((actuales) => actuales.map((ejercicio) => ({
@@ -161,6 +159,7 @@ function App() {
     setErrorProgresoRutinas('')
 
     try {
+      const { guardarProgresoRutina } = await import('./services/firebase/progresoRutinas.js')
       await guardarProgresoRutina(usuarioUid, ejercicioActual.rutinaId, idsCompletados)
       if (obtenerUsuarioActual()?.uid !== usuarioUid) return
 
@@ -273,52 +272,54 @@ function App() {
       />
 
       <div className="page-content" id="inicio">
-        {ejercicioCatalogoSeleccionado || ejercicioSeleccionado ? (
-          <ExerciseDetailPage
-            ejercicioCatalogo={ejercicioCatalogoSeleccionado ? detalleCatalogoApi : null}
-            estadoDetalleCatalogo={estadoDetalleCatalogo}
-            ejercicioRutina={ejercicioSeleccionado}
-            estadoProgresoRutinas={estadoProgresoRutinas}
-            guardandoProgresoRutinas={guardandoProgresoRutinas}
-            errorProgresoRutinas={errorProgresoRutinas}
-            onVolverAlCatalogo={() => {
-              setEjercicioCatalogoSeleccionado(null)
-              setDetalleCatalogoApi(null)
-              setEstadoDetalleCatalogo('idle')
-            }}
-            onVolverARutina={() => setEjercicioSeleccionado(null)}
-            onAlternarCompletado={alternarCompletado}
-          />
-        ) : pagina === 'rutina' ? (
-          <RoutinePage
-            nombreDia={nombreDia}
-            rutinaSemanalDeHoy={rutinaSemanalDeHoy}
-            onVolverInicio={() => setPagina('inicio')}
-            ejercicios={ejercicios}
-            estadoProgresoRutinas={estadoProgresoRutinas}
-            errorProgresoRutinas={errorProgresoRutinas}
-            guardandoProgresoRutinas={guardandoProgresoRutinas}
-            onReintentarCarga={() => setIntentoCargaProgreso((intento) => intento + 1)}
-            onSeleccionarEjercicio={setEjercicioSeleccionado}
-            onAlternarCompletado={alternarCompletado}
-            onAbrirDetalleCatalogo={abrirDetalleCatalogo}
-            zonaSeleccionada={zonaSeleccionada}
-            setZonaSeleccionada={setZonaSeleccionada}
-            vistaMapa={vistaMapa}
-            setVistaMapa={setVistaMapa}
-          />
-        ) : (
-          <HomePage
-            nombreDia={nombreDia}
-            rutinaDeHoy={rutinaDeHoy}
-            totalEjercicios={ejercicios.length}
-            uid={estadoAcceso.usuario.uid}
-            onComenzarEntrenamiento={() => {
-              setPagina('rutina')
-              setEjercicioSeleccionado(null)
-            }}
-          />
-        )}
+        <Suspense fallback={<p className="auth-status" role="status">Cargando la vista…</p>}>
+          {ejercicioCatalogoSeleccionado || ejercicioSeleccionado ? (
+            <ExerciseDetailPage
+              ejercicioCatalogo={ejercicioCatalogoSeleccionado ? detalleCatalogoApi : null}
+              estadoDetalleCatalogo={estadoDetalleCatalogo}
+              ejercicioRutina={ejercicioSeleccionado}
+              estadoProgresoRutinas={estadoProgresoRutinas}
+              guardandoProgresoRutinas={guardandoProgresoRutinas}
+              errorProgresoRutinas={errorProgresoRutinas}
+              onVolverAlCatalogo={() => {
+                setEjercicioCatalogoSeleccionado(null)
+                setDetalleCatalogoApi(null)
+                setEstadoDetalleCatalogo('idle')
+              }}
+              onVolverARutina={() => setEjercicioSeleccionado(null)}
+              onAlternarCompletado={alternarCompletado}
+            />
+          ) : pagina === 'rutina' ? (
+            <RoutinePage
+              nombreDia={nombreDia}
+              rutinaSemanalDeHoy={rutinaSemanalDeHoy}
+              onVolverInicio={() => setPagina('inicio')}
+              ejercicios={ejercicios}
+              estadoProgresoRutinas={estadoProgresoRutinas}
+              errorProgresoRutinas={errorProgresoRutinas}
+              guardandoProgresoRutinas={guardandoProgresoRutinas}
+              onReintentarCarga={() => setIntentoCargaProgreso((intento) => intento + 1)}
+              onSeleccionarEjercicio={setEjercicioSeleccionado}
+              onAlternarCompletado={alternarCompletado}
+              onAbrirDetalleCatalogo={abrirDetalleCatalogo}
+              zonaSeleccionada={zonaSeleccionada}
+              setZonaSeleccionada={setZonaSeleccionada}
+              vistaMapa={vistaMapa}
+              setVistaMapa={setVistaMapa}
+            />
+          ) : (
+            <HomePage
+              nombreDia={nombreDia}
+              rutinaDeHoy={rutinaDeHoy}
+              totalEjercicios={ejercicios.length}
+              uid={estadoAcceso.usuario.uid}
+              onComenzarEntrenamiento={() => {
+                setPagina('rutina')
+                setEjercicioSeleccionado(null)
+              }}
+            />
+          )}
+        </Suspense>
       </div>
 
       <AppFooter />

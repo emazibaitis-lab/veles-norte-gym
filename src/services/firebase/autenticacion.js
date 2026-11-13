@@ -1,5 +1,5 @@
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth'
-import { auth } from '../../firebase.js'
+import { auth } from '../../firebaseAuth.js'
 
 export function observarSesion(callback) {
   return onAuthStateChanged(auth, callback)
