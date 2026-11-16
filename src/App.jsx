@@ -299,7 +299,6 @@ function App() {
               errorProgresoRutinas={errorProgresoRutinas}
               guardandoProgresoRutinas={guardandoProgresoRutinas}
               onReintentarCarga={() => setIntentoCargaProgreso((intento) => intento + 1)}
-              onSeleccionarEjercicio={setEjercicioSeleccionado}
               onAlternarCompletado={alternarCompletado}
               onAbrirDetalleCatalogo={abrirDetalleCatalogo}
               zonaSeleccionada={zonaSeleccionada}

@@ -13,7 +13,6 @@ function RoutinePage({
   errorProgresoRutinas,
   guardandoProgresoRutinas,
   onReintentarCarga,
-  onSeleccionarEjercicio,
   onAlternarCompletado,
   onAbrirDetalleCatalogo,
   zonaSeleccionada,
@@ -155,7 +154,7 @@ function RoutinePage({
                   <div className="exercise-list">
                     {ejerciciosRutina.map((ejercicio, indiceEjercicio) => (
                       <article className={`exercise-row ${ejercicio.completado ? 'is-completed' : ''}`} key={ejercicio.id}>
-                        <button className="exercise-main" onClick={() => onSeleccionarEjercicio(ejercicio)}>
+                        <div className="exercise-main">
                           <span className="exercise-number">{String(indiceEjercicio + 1).padStart(2, '0')}</span>
                           <span className="exercise-info">
                             <span className="exercise-group">{ejercicio.grupo}</span>
@@ -164,8 +163,7 @@ function RoutinePage({
                               {ejercicio.series} series × {ejercicio.repeticiones} reps · descanso {ejercicio.descanso}
                             </span>
                           </span>
-                          <span className="exercise-arrow">↗</span>
-                        </button>
+                        </div>
                         <button
                           className={`check-button ${ejercicio.completado ? 'checked' : ''}`}
                           disabled={estadoProgresoRutinas !== 'ready' || guardandoProgresoRutinas}

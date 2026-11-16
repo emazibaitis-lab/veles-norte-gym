@@ -1222,17 +1222,6 @@ a:focus-visible {
   font-size: 11px;
 }
 
-.exercise-arrow {
-  color: var(--muted);
-  font-size: 18px;
-  transition: transform 160ms ease;
-}
-
-.exercise-main:hover .exercise-arrow {
-  transform: translate(3px, -3px);
-  color: #171717;
-}
-
 .check-button {
   display: grid;
   flex: 0 0 30px;
@@ -1964,10 +1953,6 @@ a:focus-visible {
 
   .exercise-meta {
     font-size: 10px;
-  }
-
-  .exercise-arrow {
-    font-size: 15px;
   }
 
   .check-button {
